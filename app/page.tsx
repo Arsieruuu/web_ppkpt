@@ -3,23 +3,61 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { login } from "@/lib/api";
 
 export default function Home() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    setIsLoading(true);
     
-    // Validasi username dan password
-    if (username === "admin1" && password === "test1234") {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("username", username);
-      router.push("/admin");
-    } else {
-      alert("Username atau password salah!\n\nGunakan:\nUsername: admin1\nPassword: test1234");
+    try {
+      const response = await login(username, password);
+      
+      console.log('Login response:', response);
+      console.log('Response success:', response.success);
+      console.log('Response data:', response.data);
+      
+      if (response.success === true && response.data) {
+        console.log('User role:', response.data.user?.role);
+        
+        // Check if user is admin or superadmin
+        const userRole = response.data.user?.role;
+        if (userRole === 'admin' || userRole === 'superadmin') {
+          // Store additional data for UI
+          localStorage.setItem("isLoggedIn", "true");
+          localStorage.setItem("username", response.data.user.username);
+          localStorage.setItem("full_name", response.data.user.full_name);
+          localStorage.setItem("role", response.data.user.role);
+          
+          console.log('✅ Login success! Redirecting to admin...');
+          
+          // Force redirect with window.location
+          setTimeout(() => {
+            window.location.href = "/admin";
+          }, 100);
+          return; // Stop execution here
+        } else {
+          console.log('❌ User role not admin:', userRole);
+          setError("Hanya admin yang dapat mengakses halaman ini");
+        }
+      } else {
+        // Handle error messages from backend
+        console.log('❌ Login failed:', response.message);
+        setError(response.message || "Username atau password salah");
+      }
+    } catch (err) {
+      console.error('❌ Login error:', err);
+      setError("Terjadi kesalahan. Silakan coba lagi.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -140,12 +178,20 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Error Message */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Login Button */}
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-lg font-semibold transition-colors duration-200 text-lg mt-6"
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-lg font-semibold transition-colors duration-200 text-lg mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Masuk
+              {isLoading ? "Memproses..." : "Masuk"}
             </button>
           </form>
         </div>

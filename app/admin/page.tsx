@@ -2,71 +2,125 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
-interface Report {
-  id: number;
-  name: string;
-  department: string;
-  description: string;
-  status: string;
-  daysAgo: number;
-  isNew: boolean;
-}
+import { getAdminLaporanList, type Laporan, logout, getCurrentUser, isLoggedIn as checkAuth } from "@/lib/api";
 
 export default function AdminPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [laporanList, setLaporanList] = useState<Laporan[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
+  const [stats, setStats] = useState({
+    total: 0,
+    dalam_proses: 0,
+    verifikasi: 0,
+    selesai: 0,
+  });
 
-  // Sample data
-  const [reports] = useState<Report[]>([
-    {
-      id: 1,
-      name: "Rio Adrian",
-      department: "Jurusan Teknologi Informasi",
-      description: "Prodi teknologi rekayasa...",
-      status: "Menunggu Laporan",
-      daysAgo: 12,
-      isNew: true,
-    },
-    {
-      id: 2,
-      name: "Rio Adrian",
-      department: "Jurusan Teknologi Informasi",
-      description: "Prodi teknologi rekayasa...",
-      status: "Menunggu Laporan",
-      daysAgo: 12,
-      isNew: true,
-    },
-  ]);
-
+  // First useEffect: Check auth and mount
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem("isLoggedIn");
-    const storedUsername = localStorage.getItem("username");
+    setIsMounted(true);
     
-    if (!isLoggedIn) {
-      router.push("/");
-    } else {
+    if (typeof window !== 'undefined') {
+      const isLoggedIn = checkAuth();
+      const storedUsername = localStorage.getItem("username");
+      const storedFullName = localStorage.getItem("full_name");
+      
+      if (!isLoggedIn) {
+        router.push("/");
+        return;
+      }
+      
       setUsername(storedUsername || "Admin");
+      setFullName(storedFullName || "");
     }
+  }, [router]);
 
-    // Update time every second
+  // Second useEffect: Load data after mounted
+  useEffect(() => {
+    if (isMounted) {
+      loadLaporanData();
+    }
+  }, [isMounted]);
+
+  // Third useEffect: Update time
+  useEffect(() => {
+    if (!isMounted) return;
+    
     const updateTime = () => {
       setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
     
-    updateTime(); // Set initial time
+    updateTime();
     const timer = setInterval(updateTime, 1000);
     
     return () => clearInterval(timer);
-  }, [router]);
+  }, [isMounted]);
+
+  const loadLaporanData = async () => {
+    setIsLoading(true);
+    
+    // Set timeout to stop loading after 5 seconds
+    const timeoutId = setTimeout(() => {
+      console.warn('⚠️ API timeout after 5 seconds');
+      setIsLoading(false);
+      setLaporanList([]);
+    }, 5000);
+    
+    try {
+      console.log('🔄 Fetching laporan from backend...');
+      console.log('📍 API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+      
+      const response = await getAdminLaporanList({
+        limit: 10,
+        page: 1,
+      });
+
+      clearTimeout(timeoutId); // Clear timeout if API responds
+      console.log('📦 Laporan response:', response);
+
+      // Backend returns flat structure: { success, message, data, statistics, pagination }
+      if (response.success) {
+        const data = response.data?.data || response.data || [];
+        const statistics = response.data?.statistics || response.statistics;
+        
+        console.log('✅ Laporan loaded:', Array.isArray(data) ? data.length : 0, 'items');
+        setLaporanList(Array.isArray(data) ? data : []);
+        
+        if (statistics) {
+          setStats({
+            total: statistics.total || 0,
+            dalam_proses: statistics.dalam_proses || 0,
+            verifikasi: statistics.verifikasi || 0,
+            selesai: statistics.selesai || 0,
+          });
+          console.log('📊 Statistics:', statistics);
+        }
+      } else {
+        console.error('❌ Failed to load laporan:', response.message);
+        setLaporanList([]);
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('❌ Error loading laporan:', error);
+      setLaporanList([]); // Set empty array on error
+    } finally {
+      setIsLoading(false);
+      console.log('✅ Loading complete');
+    }
+  };
 
   const confirmLogout = () => {
+    logout();
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("username");
+    localStorage.removeItem("full_name");
+    localStorage.removeItem("role");
     router.push("/");
   };
 
@@ -186,8 +240,8 @@ export default function AdminPage() {
               {/* Waktu */}
               <div className="text-sm text-gray-600">
                 <span className="font-medium">Waktu Saat Ini : </span>
-                <span className="text-blue-600 font-semibold">
-                  {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                <span className="text-blue-600 font-semibold" suppressHydrationWarning>
+                  {currentTime || '--:--:--'}
                 </span>
               </div>
             </div>
@@ -332,7 +386,7 @@ export default function AdminPage() {
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                View all 12
+                View all {laporanList.length}
               </button>
               <button
                 onClick={() => setActiveTab("newest")}
@@ -342,7 +396,7 @@ export default function AdminPage() {
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                Terbaru 12
+                Terbaru {laporanList.length}
               </button>
               <button
                 onClick={() => setActiveTab("oldest")}
@@ -358,46 +412,68 @@ export default function AdminPage() {
 
             {/* Reports List */}
             <div className="space-y-4">
-              {reports.map((report) => (
-                <div
-                  key={report.id}
-                  className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                      <svg 
-                        className="w-6 h-6 text-gray-500" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round" 
-                          strokeWidth={2} 
-                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" 
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-1">
-                        <h5 className="font-semibold text-gray-800">{report.name}</h5>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <span>{report.daysAgo} hari yang lalu</span>
-                          {report.isNew && (
-                            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                          )}
+              {isLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-gray-500">Memuat laporan...</p>
+                </div>
+              ) : laporanList.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Tidak ada laporan</p>
+                </div>
+              ) : (
+                laporanList.slice(0, 5).map((laporan) => {
+                  const tanggal = new Date(laporan.created_at);
+                  const daysAgo = Math.floor((Date.now() - tanggal.getTime()) / (1000 * 60 * 60 * 24));
+                  
+                  return (
+                    <div
+                      key={laporan.id}
+                      className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                          <svg 
+                            className="w-6 h-6 text-gray-500" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round" 
+                              strokeWidth={2} 
+                              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" 
+                            />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between mb-1">
+                            <h5 className="font-semibold text-gray-800">{laporan.nama}</h5>
+                            <div className="flex items-center gap-2 text-sm text-gray-500">
+                              <span>{daysAgo} hari yang lalu</span>
+                              {daysAgo <= 1 && (
+                                <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">{laporan.jenis_kekerasan}</p>
+                          <p className="text-sm text-gray-700 mb-3">{laporan.domisili}</p>
+                          <span className={`inline-block px-4 py-1 text-sm font-medium rounded-full ${
+                            laporan.status === 'Selesai' ? 'bg-green-100 text-green-700' :
+                            laporan.status === 'Dalam Proses' ? 'bg-gray-100 text-gray-700' :
+                            laporan.status === 'Verifikasi' ? 'bg-orange-100 text-orange-600' :
+                            laporan.status === 'Proses Tindak Lanjut' ? 'bg-blue-100 text-blue-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {laporan.status}
+                          </span>
                         </div>
                       </div>
-                      <p className="text-sm text-gray-600 mb-2">{report.department}</p>
-                      <p className="text-sm text-gray-700 mb-3">{report.description}</p>
-                      <span className="inline-block px-4 py-1 bg-orange-100 text-orange-600 text-sm font-medium rounded-full">
-                        {report.status}
-                      </span>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })
+              )}
             </div>
           </div>
         </main>

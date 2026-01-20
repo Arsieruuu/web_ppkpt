@@ -2,15 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
-interface Laporan {
-  id: number;
-  nama: string;
-  judul: string;
-  deskripsi: string;
-  waktu: string;
-  status: "Selesai" | "Proses" | "Ditolak" | "Menunggu";
-}
+import { getAdminLaporanList, type Laporan as ApiLaporan, logout, isLoggedIn as checkAuth } from "@/lib/api";
 
 export default function LaporanPage() {
   const router = useRouter();
@@ -20,83 +12,77 @@ export default function LaporanPage() {
   const [username, setUsername] = useState("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [laporanList, setLaporanList] = useState<ApiLaporan[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({
+    total: 0,
+    dalam_proses: 0,
+    verifikasi: 0,
+    proses_tindak_lanjut: 0,
+    selesai: 0,
+    ditolak: 0,
+  });
 
-  // Sample data
-  const [laporanList] = useState<Laporan[]>([
-    {
-      id: 1,
-      nama: "Rio Adrian",
-      judul: "Kekerasan Fisik",
-      deskripsi: "kekerasan fisik - Jakarta",
-      waktu: "07:21",
-      status: "Selesai",
-    },
-    {
-      id: 2,
-      nama: "Rio Adrian",
-      judul: "Test Laporan",
-      deskripsi: "test - test",
-      waktu: "07:43",
-      status: "Selesai",
-    },
-    {
-      id: 3,
-      nama: "Rio Adrian",
-      judul: "Test Laporan",
-      deskripsi: "test - test",
-      waktu: "07:10",
-      status: "Ditolak",
-    },
-    {
-      id: 4,
-      nama: "Andi Pratama",
-      judul: "Pelecehan Verbal",
-      deskripsi: "pelecehan verbal - Bandung",
-      waktu: "09:15",
-      status: "Menunggu",
-    },
-    {
-      id: 5,
-      nama: "Siti Nurhaliza",
-      judul: "Diskriminasi",
-      deskripsi: "diskriminasi gender - Surabaya",
-      waktu: "10:30",
-      status: "Proses",
-    },
-  ]);
-
-  const totalLaporan = laporanList.length;
-  const belumVerifikasi = laporanList.filter(l => l.status === "Menunggu").length;
+  const totalLaporan = stats.total;
+  const belumVerifikasi = stats.dalam_proses;
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Selesai":
         return "bg-green-100 text-green-700";
-      case "Proses":
+      case "Dalam Proses":
+        return "bg-gray-100 text-gray-700";
+      case "Verifikasi":
+        return "bg-orange-100 text-orange-700";
+      case "Proses Tindak Lanjut":
         return "bg-blue-100 text-blue-700";
       case "Ditolak":
         return "bg-red-100 text-red-700";
-      case "Menunggu":
-        return "bg-orange-100 text-orange-700";
       default:
         return "bg-gray-100 text-gray-700";
     }
   };
 
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem("isLoggedIn");
+    const isLoggedIn = checkAuth();
     const storedUsername = localStorage.getItem("username");
     
     if (!isLoggedIn) {
       router.push("/");
-    } else {
-      setUsername(storedUsername || "Admin");
+      return;
     }
+    
+    setUsername(storedUsername || "Admin");
+    loadLaporanData();
   }, [router]);
 
+  const loadLaporanData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await getAdminLaporanList({
+        page: 1,
+        limit: 50,
+      });
+
+      if (response.success && response.data) {
+        setLaporanList(response.data.data || []);
+        if (response.data.statistics) {
+          setStats(response.data.statistics);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading laporan:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const confirmLogout = () => {
+    logout();
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("username");
+    localStorage.removeItem("full_name");
+    localStorage.removeItem("role");
     router.push("/");
   };
 
@@ -107,8 +93,8 @@ export default function LaporanPage() {
 
   const filteredLaporan = laporanList.filter((laporan) => {
     const matchSearch = laporan.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       laporan.judul.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       laporan.deskripsi.toLowerCase().includes(searchQuery.toLowerCase());
+                       laporan.jenis_kekerasan.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                       laporan.domisili.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchStatus = statusFilter === "Semua Status" || laporan.status === statusFilter;
     
@@ -344,7 +330,12 @@ export default function LaporanPage() {
 
           {/* Laporan List */}
           <div className="space-y-4">
-            {filteredLaporan.length === 0 ? (
+            {isLoading ? (
+              <div className="bg-white rounded-xl p-12 text-center">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-500 text-lg">Memuat laporan...</p>
+              </div>
+            ) : filteredLaporan.length === 0 ? (
               <div className="bg-white rounded-xl p-12 text-center">
                 <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -352,38 +343,45 @@ export default function LaporanPage() {
                 <p className="text-gray-500 text-lg">Tidak ada laporan ditemukan</p>
               </div>
             ) : (
-              filteredLaporan.map((laporan) => (
-              <a 
-                key={laporan.id} 
-                href={`/admin/laporan/${laporan.id}`}
-                className="block bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all cursor-pointer"
-              >
-                <div className="flex items-start gap-4">
-                  {/* Avatar */}
-                  <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg className="w-6 h-6 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-bold text-gray-800 mb-1">{laporan.nama}</h3>
-                        <p className="text-gray-600 text-sm mb-1">{laporan.deskripsi}</p>
-                      </div>
-                      <span className="text-gray-400 text-sm whitespace-nowrap ml-4">{laporan.waktu}</span>
+              filteredLaporan.map((laporan) => {
+                const tanggal = new Date(laporan.created_at);
+                const waktu = tanggal.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                const tanggalStr = tanggal.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+                
+                return (
+                <a 
+                  key={laporan.id} 
+                  href={`/admin/laporan/${laporan.id}`}
+                  className="block bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all cursor-pointer"
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Avatar */}
+                    <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                      </svg>
                     </div>
-                    
-                    {/* Status Badge */}
-                    <span className={`inline-block px-4 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(laporan.status)}`}>
-                      {laporan.status}
-                    </span>
+
+                    {/* Content */}
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-bold text-gray-800 mb-1">{laporan.nama}</h3>
+                          <p className="text-gray-600 text-sm mb-1">{laporan.jenis_kekerasan} - {laporan.domisili}</p>
+                          <p className="text-gray-400 text-xs">{tanggalStr}</p>
+                        </div>
+                        <span className="text-gray-400 text-sm whitespace-nowrap ml-4">{waktu}</span>
+                      </div>
+                      
+                      {/* Status Badge */}
+                      <span className={`inline-block px-4 py-1 rounded-full text-xs font-medium mt-2 ${getStatusColor(laporan.status)}`}>
+                        {laporan.status}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </a>
-            ))
+                </a>
+              );
+              })
             )}
           </div>
         </div>
